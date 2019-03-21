@@ -30,7 +30,7 @@ class BalanceBotVrepEnv(vrep_env.VrepEnv):
 		# #modify: the name of the joints to be used in action space
 		joint_names = ['l_wheel_joint','r_wheel_joint']
 		# #modify: the name of the shapes to be used in observation space
-		shape_names = ['body']
+		shape_names = ['base', 'l_wheel', 'r_wheel']
 		
 		## Getting object handles
 		# we will store V-rep object handles (oh = object handle)
@@ -52,7 +52,7 @@ class BalanceBotVrepEnv(vrep_env.VrepEnv):
 		# #modify: if size of observation space is different than number of joints
 		# Example: 3 dimensions of linear and angular (2) velocities + 6 additional dimension
 		# 3 =  X, Y, Theta thus planar position (Might want to expand it to the velocities as well)
-		num_obs = len(self.oh_shape) + 3
+		num_obs = 9
 		
 		# #modify: action_space and observation_space to suit your needs
 		self.joints_max_velocity = 3.0
@@ -71,21 +71,22 @@ class BalanceBotVrepEnv(vrep_env.VrepEnv):
 		"""
 		# start with empty list
 		lst_o = [];
+
+		#Definition of the observation vector:
+		# [x, y, theta, base_ang_vel x 3, wheel_encoder_l, wheel_encoder_r]
+		pos = self.obj_get_position(self.oh_shape[0])
+		ang_pos , ang_vel = self.obj_get_velocity(self.oh_shape[0])
 		
-		# #modify: optionally include positions or velocities
-		pos               = self.obj_get_position(self.oh_shape[0])
-		lin_vel , ang_vel = self.obj_get_velocity(self.oh_shape[0])
-		lst_o += pos
-		lst_o += lin_vel
+		lst_o += pos[0:2]
+		#Theta is in Radians, make it a complex number
+		lst_o += [np.sin(ang_pos[2]), np.cos(ang_pos[2])]
+		lst_o += ang_vel
+
+		l_angle = self.obj_get_joint_angle(self.oh_joint[0])
+		r_angle = self.obj_get_joint_angle(self.oh_joint[1])
 		
-		# #modify
-		# example: include position, linear and angular velocities of all shapes
-		for i_oh in self.oh_shape:
-			rel_pos = self.obj_get_position(i_oh, relative_to=vrep.sim_handle_parent)
-			lst_o += rel_pos ;
-			lin_vel , ang_vel = self.obj_get_velocity(i_oh)
-			lst_o += ang_vel ;
-			lst_o += lin_vel ;
+		lst_o += [l_angle]
+		lst_o += [r_angle]
 		
 		self.observation = np.array(lst_o).astype('float32');
 	
@@ -117,17 +118,19 @@ class BalanceBotVrepEnv(vrep_env.VrepEnv):
 		# example: possible variables used in reward
 		head_pos_x = self.observation[0] # front/back
 		head_pos_y = self.observation[1] # left/right
-		head_pos_z = self.observation[2] # up/down
 		nrm_action  = np.linalg.norm(action)
-		r_regul     = -(nrm_action**2)
+		r_regul     = -(nrm_action)
 		r_alive = 1.0
-		# example: different weights in reward
-		reward = (8.0)*(r_alive) +(4.0)*(head_pos_x) +(1.0)*(head_pos_z)
+		# example: different weights in reward 
+		#attempts to stay alive and stay centered
+		reward = (8.0)*(r_alive) +(-1.0)*(np.abs(head_pos_x)) +(-1.0)*(np.abs(head_pos_y))
 		
+		#Check if the balancebot fell over 
+		angle_base = self.obj_get_orientation(self.oh_shape[0])
 		# Early stop
 		# #modify if the episode should end earlier
-		tolerable_threshold = 0.20
-		done = (head_pos_z < tolerable_threshold)
+		tolerable_threshold = 0.5  #rads
+		done = (np.abs(angle_base[0]) > tolerable_threshold or np.abs(angle_base[1]) > tolerable_threshold)
 		#done = False
 		
 		return self.observation, reward, done, {}
