@@ -12,3 +12,6 @@ from gym.envs import make, spec, register
 from gym import logger
 
 __all__ = ["Env", "Space", "Wrapper", "make", "spec", "register"]
+
+#Environment extensions are imported here to make them accesable through importing the Gym package
+import rl_environments
